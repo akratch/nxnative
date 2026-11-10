@@ -68,6 +68,24 @@ t_tbuf2d: t_tbuf2d.m ../nvn/nvn_tex.c ../nvn/nvn_tex.h
 	clang -O1 -g -Wall -fobjc-arc -o $@ t_tbuf2d.m ../nvn/nvn_tex.c -framework Metal -framework Foundation
 t_tbuf_align: t_tbuf_align.m
 	clang -O1 -g -Wall -fobjc-arc -o $@ t_tbuf_align.m -framework Metal -framework Foundation
+t_tbuf_order: t_tbuf_order.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_tbuf_order.m $(MTL_T_SRC) $(FW)
+t_tbuf_nvn: t_tbuf_nvn.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_tbuf_nvn.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
+.PHONY: check_t_tbuf_nvn
+check_t_tbuf_nvn: t_tbuf_nvn
+	MTL_DEBUG_LAYER=1 DM_NVN_TBDR=0 DM_NVN_UB_LAZY=0 DM_NVN_UB_DEFER=1 DM_NVN_ENC_THREAD=0 ./t_tbuf_nvn
+	MTL_DEBUG_LAYER=1 DM_NVN_TBDR=0 DM_NVN_UB_LAZY=0 DM_NVN_UB_DEFER=1 DM_NVN_ENC_THREAD=1 ./t_tbuf_nvn
+t_tbuf_geometry: t_tbuf_geometry.m t_geometry.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_tbuf_geometry.m $(MTL_T_SRC) $(FW)
+.PHONY: check_t_tbuf_geometry
+check_t_tbuf_geometry: t_tbuf_geometry
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=0 ./t_tbuf_geometry
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=1 ./t_tbuf_geometry
+.PHONY: check_t_tbuf_order
+check_t_tbuf_order: t_tbuf_order
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=0 ./t_tbuf_order
+	MTL_DEBUG_LAYER=1 DM_NVN_ENC_THREAD=1 ./t_tbuf_order
 t_tbuf_access: t_tbuf_access.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_tbuf_access.m $(MTL_T_SRC) $(FW)
 .PHONY: check_t_tbuf_access

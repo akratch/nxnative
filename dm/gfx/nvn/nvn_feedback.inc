@@ -64,7 +64,8 @@ static void tf_draw(NvProg *pr,const p_draw *dw,const p_draw_idx *di) {
     if(count>UINT32_MAX)return;
     id<MTLRenderPipelineState> ps=vs&&vs->tf_fn?tf_pso(vs):nil;if(!ps)return;
     uint64_t dst[4]={0};uint64_t job=tf_prepare(vs,0,0,(uint32_t)count,dw->prim==0?1:dw->prim==1?2:3,
-                                              dw->first,dw->count,dw->base_instance,dst);if(!job)return;
+                                              dw->first,dw->count,dw->base_instance,dst);if(!job)return; // NOLINT(clang-analyzer-osx.cocoa.RetainCount): tf_pso transfers its CF retain to g_pso via hm_put_id; this return does not abandon an owned PSO.
+    tbuf_prepare_stage(vs,0);
     vbuf_prepare(vs?&vs->rf:NULL,dw,NULL);if(g_blit){enc_b_end(g_blit);g_blit=nil;}
     MTL4RenderPassDescriptor *rd=[MTL4RenderPassDescriptor new];rd.renderTargetWidth=rd.renderTargetHeight=rd.defaultRasterSampleCount=1;
     id<MTL4RenderCommandEncoder> en=enc_r_begin(rd);enc_r_pso(en,ps);
@@ -80,6 +81,7 @@ static void tf_geometry(NvShader *reader,uint64_t indices,uint64_t args,uint32_t
     if(!reader->tf_fn){RED_ONCE(104,"geometry feedback reader %s has no capture entry",reader->key);return;}
     id<MTLRenderPipelineState> ps=tf_pso(reader);if(!ps)return;
     uint64_t dst[4]={0};uint64_t job=tf_prepare(reader,args,indices,0,primitive,0,0,base_instance,dst);if(!job)return;
+    tbuf_prepare_stage(reader,0);if(g_blit){enc_b_end(g_blit);g_blit=nil;}
     MTL4RenderPassDescriptor *rd=[MTL4RenderPassDescriptor new];rd.renderTargetWidth=rd.renderTargetHeight=rd.defaultRasterSampleCount=1;
     id<MTL4RenderCommandEncoder> en=enc_r_begin(rd);enc_r_pso(en,ps);args_dirty_all();encode_args(en,reader,0,1);enc_r_vbuf(en,14,job);
     for(int b=0;b<4;b++)if(reader->tf_stride[b])enc_r_vbuf(en,TF_SLOT+b,dst[b]);

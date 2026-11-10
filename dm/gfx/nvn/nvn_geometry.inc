@@ -135,6 +135,7 @@ static void vertex_dump(NvShader *vs, const p_draw *dw, const p_draw_idx *di) {
     for (int k = 0; k < GEO_CAPTURE_WORDS; k++) gc.slot[k] = (int16_t)k;   // every word, in order
     memcpy((uint8_t *)output.contents + offset, &gc, sizeof gc);
     p_draw range = {.first = (int32_t)lo, .count = (int32_t)span, .instances = 1, .base_instance = (int32_t)(info[3] & UINT32_MAX)};
+    tbuf_prepare_stage(vs, 0);
     vbuf_prepare(&vs->rf, &range, NULL);   // the vertices the capture reads: streams it reads past get zeros there (vbuf_need)
     if (g_blit) { enc_b_end(g_blit); g_blit = nil; }
     MTL4RenderPassDescriptor *rd = [MTL4RenderPassDescriptor new]; rd.renderTargetWidth = rd.renderTargetHeight = rd.defaultRasterSampleCount = 1;
@@ -317,6 +318,10 @@ static geo_access geo_access_of(NvProg *pr, NvShader *gs) {
         if (sh->rf.drv_read[0]) a.unknown=1;
         for (int i=0;i<sh->rf.nb;i++) {
             const nvn_rbind *b=&sh->rf.b[i];
+            // Lookahead captures bind inside an already-open encoder. A job
+            // whose read may need an ordered snapshot starts its own run; the
+            // normal path prepares it before capture/GS without dropping work.
+            if (tbuf_binding_candidate(b)) a.unknown=1;
             if ((b->kind==NVN_RB_TEX || b->kind==NVN_RB_TEXU || b->kind==NVN_RB_TEXD || b->kind==NVN_RB_TEXA) && b->dtt==MTLTextureTypeTextureBuffer) a.unknown=1;
             if (b->kind==NVN_RB_CBUF || b->kind==NVN_RB_UBOP || b->kind==NVN_RB_SBUFP || b->kind==NVN_RB_TEXU || b->kind==NVN_RB_SAMPU) {
                 if (b->reg>=16) { a.unknown=1; continue; }
@@ -1085,6 +1090,7 @@ static void geo_draw_(NvProg *pr, const p_draw *dw0, const p_draw_idx *di0, uint
         const char *fn[5] = {"geo_pack_count", "geo_pack_scan", "geo_pack_write", "geo_pack_small", "geo_pack_scan_legacy"};
         for (int i = 0; i < 5 && lib; i++) if (!(pack[i] = [g_dev newComputePipelineStateWithFunction:[lib newFunctionWithName:@(fn[i])] error:&e])) break;
         if (!pack[4]) { for (int i = 0; i < 5; i++) pack[i] = nil; MLOG("[RED] geometry index compaction: %s", e.localizedDescription.UTF8String); return; } }
+    tbuf_prepare_stage(j0->vs, 0);
     if (g_blit) { enc_b_end(g_blit); g_blit = nil; }
     if (g_geo_split_compute < 0) { const char *e = getenv("DM_NVN_GEOMETRY_COMPUTE"); g_geo_split_compute = e && !strcmp(e, "split"); }
     MTL4RenderPassDescriptor *rd = [MTL4RenderPassDescriptor new]; rd.renderTargetWidth = rd.renderTargetHeight = rd.defaultRasterSampleCount = 1;
@@ -1102,6 +1108,13 @@ static void geo_draw_(NvProg *pr, const p_draw *dw0, const p_draw_idx *di0, uint
         if (i) {
             const uint8_t *p; op_hdr h; const void *a;
             while (fz_next(&cur, &p, &h, &a) && p != g_geo_run[i].op) state_op(h.op, a);
+        }
+        if (tbuf_shader_candidate(g_geo_run[i].gs)) {
+            // Capture writes precede the GS snapshot. This encoder is local,
+            // not g_enc: its owner ends it before preparation can open a copy.
+            if (ce) { enc_c_end(ce); ce = nil; }
+            tbuf_prepare_stage(g_geo_run[i].gs, 2);
+            if (g_blit) { enc_b_end(g_blit); g_blit = nil; }
         }
         if (!ce) ce = enc_c_begin(NULL);
         geo_gs_one(ce, &g_geo_run[i]);

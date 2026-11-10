@@ -35,7 +35,7 @@ DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into 
 DM_ENV_FILE_KEYS	switch	Set by the iOS app and the Mac launcher at launch to the space-separated names an env file set; the settings screen keeps those values and shows them greyed out
 DM_ENV_LAUNCH_KEYS	switch	Set at launch by the Mac launcher (the launcher settings already in the environment) and the iOS app (every DM_* variable already in it) to the space-separated names; the settings screen keeps those values and shows them greyed out
 DM_EXEC_OUT	path	File `oe::ExecuteProgram` records the next program and its parameters in, then the app ends (the iOS app of a game of several programs sets it to `Documents/program.bin`)
-DM_EXIT_ARCH_MS	switch	`=<ms>`: the time the graceful exit (SIGTERM, the iOS termination callback) gives the pipeline archive's write beyond its 1.5 s for the rest (default 8000 on the Mac, 3000 on iOS; 0: none, the archive gets what the 1.5 s leaves). A write the deadline cuts short leaves a .tmp, which the next start removes
+DM_EXIT_ARCH_MS	switch	`=<ms>`: the time the graceful exit (SIGTERM, the iOS termination callback) gives the pipeline archive's write beyond its 1.5 s for the rest (default 8000 on the Mac, 3000 on iOS; complete integer 0 through 2147483647, invalid input uses the default; 0: none, the archive gets what the 1.5 s leaves). A write the deadline cuts short leaves a .tmp, which the next start removes
 DM_FD_LOG	diagnostic	`=<seconds>` logs, every that many seconds, the number and kinds of file descriptors the process has open
 DM_FIXED_TIME	switch	`=<seconds>`: the user clock always returns that time and the host time zone is pinned to UTC, for deterministic comparison
 DM_FOCUS_KEEP	switch	`1` keeps the game in focus while its Mac window is up, whichever app is active (minimizing still counts); `scripts/regress.py` sets it, so another app taking the key window during a run does not pause a game that stops out of focus
@@ -366,6 +366,7 @@ DM_TEST_GPU_LOST	diagnostic	`=<n>` imitates the GPU access macOS revoked from th
 DM_TEST_KEYRACE	diagnostic	`=<n>` creates up to n (at most 512) pthread keys on a thread of its own while the host starts up
 DM_TEST_KILL_AT	diagnostic	`=write:<n>` exits the process (`_exit(9)`) at the nth save write, imitating a kill mid-write
 DM_TEST_LEAK_GPU	diagnostic	`=1` allocates and keeps a 1 MB shared Metal buffer every 100 ticks: a GPU memory leak on demand
+DM_TEST_LIFECYCLE	test	Path to the synthetic lifecycle child executable used by test_lifecycle_exit.py
 DM_TEST_LINK_STALL	diagnostic	`=<start s>,<duration s>`: counting from the first present, pauses the display link at that point for that long, to check the present fallback
 DM_TEST_NO_METAL4	diagnostic	`=1` treats the GPU as one without Metal 4, as on a virtual Mac: the NVN layer starts only its classic part and drops every present
 DM_TEST_PRESENT_LAG	diagnostic	`=<every n>,<ms>[,<in a row>][;…]` sleeps that long before every nth present (and the ones after it in the run): a slow frame on demand

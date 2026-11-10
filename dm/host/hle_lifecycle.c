@@ -9,6 +9,9 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
+#include <ctype.h>
+#include <limits.h>
 void hlecount_flush(void); void dm_rec_finish(void);
 // The time the exit gives the pipeline archive beyond the 1.5 s for the rest (DM_EXIT_ARCH_MS). Writing takes 1.8-4 s for 900 bases on Macs; with 1.3 s in all, every warm-up run of
 // Ocarina of Time (2026-11-10) ended with 400-500 bases not written, built again at the next start. iOS ends an app about 5 s after its termination callback: 3 s there. A write the
@@ -20,28 +23,39 @@ enum { EXIT_BASE_MS = 1500,
        EXIT_ARCH_MS = 8000
 #endif
 };
-static int exit_arch_ms(void) { const char *e = getenv("DM_EXIT_ARCH_MS"); int v = e && *e ? atoi(e) : EXIT_ARCH_MS; return v < 0 ? 0 : v; }
+static int exit_arch_ms(void) {
+    const char *e = getenv("DM_EXIT_ARCH_MS"); if (!e || !*e) return EXIT_ARCH_MS;
+    char *end; errno = 0; long long v = strtoll(e, &end, 10);
+    int invalid = end == e || errno == ERANGE || v < 0 || v > INT_MAX;
+    while (isspace((unsigned char)*end)) end++;
+    if (invalid || *end) { LOG("invalid DM_EXIT_ARCH_MS: using %d ms", EXIT_ARCH_MS); return EXIT_ARCH_MS; }
+    return (int)v;
+}
 // The exit's last step, once: the graceful exit and its fallback can reach it together (the drain ending as the 1.5 s fallback fires); the second waits for the first's _exit.
 // hard: the final deadline, which ends the process even when the first is still in then()
 static void exit_finish(void (*then)(void *), void *arg, int hard) {
+    // The deadline must neither invoke a callback nor wait for the graceful caller's callback.
+    if (hard) _exit(0);
     static _Atomic int done;
-    if (atomic_exchange(&done, 1)) { if (hard) _exit(0); for (;;) pause(); }
+    if (atomic_exchange(&done, 1)) { for (;;) pause(); }
     if (then) then(arg);
     _exit(0);
 }
-static int ms_left(uint64_t t0, int budget_ms) { int64_t left = budget_ms - (int64_t)((now_ns() - t0) / 1000000); return left > 0 ? (int)left : 0; }
+static int ms_left(uint64_t t0, int64_t budget_ms) { int64_t left = budget_ms - (int64_t)((now_ns() - t0) / 1000000); return left > INT_MAX ? INT_MAX : left > 0 ? (int)left : 0; }
 void dm_host_shutdown_then(const char *why, void (*then)(void *), void *arg) {
     static _Atomic int once; if (atomic_exchange(&once, 1)) return;
     static _Atomic int suspended;
     uint64_t t0 = now_ns(); int arch_ms = exit_arch_ms(); LOG("received %s: graceful exit", why);
+    int64_t budget_ms = (int64_t)EXIT_BASE_MS + arch_ms;
     // Graphics not suspended in 1.5 s: a draw is still under way, most often one compiling its pipeline (the stall the harness's watcher stops a run for). The archive has been
     // writing since the start (dm_gfx_quit_begin): what it holds is written still, within the same deadline, and then the process ends
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, EXIT_BASE_MS * NSEC_PER_MSEC), dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
         if (atomic_load(&suspended)) return;
-        LOG("[RED] graceful exit: graphics not suspended in 1.5 seconds, exiting after the pipeline archive's write (up to %d ms)", ms_left(t0, EXIT_BASE_MS + arch_ms));
-        dm_gfx_quit(ms_left(t0, EXIT_BASE_MS + arch_ms)); exit_finish(then, arg, 0); });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(EXIT_BASE_MS + arch_ms + 500) * NSEC_PER_MSEC), dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
-        LOG("[RED] graceful exit not done in %.1f seconds, exiting at once", (EXIT_BASE_MS + arch_ms + 500) / 1e3); exit_finish(then, arg, 1); });
+        LOG("[RED] graceful exit: graphics not suspended in 1.5 seconds, exiting after the pipeline archive's write (up to %d ms)", ms_left(t0, budget_ms));
+        dm_gfx_quit(ms_left(t0, budget_ms)); exit_finish(then, arg, 0); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (budget_ms + 500) * NSEC_PER_MSEC), dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
+        // Even LOG can block on a stream lock held by a stuck thread. This path only terminates.
+        exit_finish(then, arg, 1); });
     hlecount_flush();                               // DM_HLECOUNT: _exit does not run atexit, write a copy here
     dm_rec_finish();                                // DM_REC: the held state and the buffered steps (hle_hid.c)
     dm_cheats_exit();                               // a clean exit: no safe mode for the cheats at the next launch (atexit does not run either)
@@ -49,7 +63,7 @@ void dm_host_shutdown_then(const char *why, void (*then)(void *), void *arg) {
     dm_gfx_quit_begin();                            // the pipeline archive starts writing what it holds now, not after the drain
     dm_gfx_suspend(1);
     atomic_store(&suspended, 1);
-    dm_gfx_quit(ms_left(t0, EXIT_BASE_MS - 200 + arch_ms));   // what the archive has not written yet (captures since), within the budget
+    dm_gfx_quit(ms_left(t0, budget_ms - 200));   // what the archive has not written yet (captures since), within the budget
     LOG("graceful exit done (%.3f s)", (now_ns() - t0) / 1e9);
     exit_finish(then, arg, 0);
 }

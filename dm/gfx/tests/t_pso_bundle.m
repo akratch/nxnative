@@ -141,11 +141,22 @@ int main(void) { @autoreleasepool {
     // takes them (layer_out 0). One whose main0 writes it (no entry_layer) gets none: its pipelines take an input primitive class
     NSString *vl = @"#include <metal_stdlib>\nusing namespace metal;\nstruct V { float4 p [[position]]; };\nstruct L { float4 p [[position]]; uint l [[render_target_array_index]]; };\n"
         "vertex V main0(uint id [[vertex_id]]) { V o; o.p = float4(float(id & 1), float(id >> 1), 0, 1); return o; }\n"
+        "vertex V main0_z(uint id [[vertex_id]]) { V o; o.p = float4(float(id & 1), float(id >> 1), 0.5, 1); return o; }\n"
         "vertex L main0_l(uint id [[vertex_id]]) { L o; o.p = float4(float(id & 1), float(id >> 1), 0, 1); o.l = 1; return o; }\n";
-    if (!lib(msl, @"vl_b", vl) && !lib(msl, @"vw_b", vl)) {
-        put([msl stringByAppendingPathComponent:@"vl_b.json"], [NSString stringWithFormat:@"{\"chain\": \"%s\", \"entry\": \"main0\", \"entry_layer\": \"main0_l\", \"vertex_inputs\": []}", DMSH_CHAIN]);
+    // Unlike a second copy of vl without entry_layer metadata, this negative control really writes the layer from main0.
+    NSString *vw = @"#include <metal_stdlib>\nusing namespace metal;\nstruct L { float4 p [[position]]; uint l [[render_target_array_index]]; };\n"
+        "vertex L main0(uint id [[vertex_id]]) { L o; o.p = float4(float(id & 1), float(id >> 1), 0, 1); o.l = 1; return o; }\n";
+    int layer_libs = lib(msl, @"vl_b", vl) || lib(msl, @"vw_b", vw);
+    EXPECT("layer-entry fixture compiled", 0, layer_libs);
+    if (!layer_libs) {
+        put([msl stringByAppendingPathComponent:@"vl_b.json"], [NSString stringWithFormat:@"{\"chain\": \"%s\", \"entry\": \"main0\", \"entry_z\": \"main0_z\", \"entry_layer\": \"main0_l\", \"vertex_inputs\": []}", DMSH_CHAIN]);
         put([msl stringByAppendingPathComponent:@"vw_b.json"], [NSString stringWithFormat:@"{\"chain\": \"%s\", \"entry\": \"main0\", \"vertex_inputs\": []}", DMSH_CHAIN]);
-        EXPECT("prebuild: a library with layer entry points of its own gets main0's base", 1, pre_desc(@"vl", @"f1", 0) != nil);
+        for (int zero = 0; zero <= 1; zero++) {
+            MTL4RenderPipelineDescriptor *d = pre_desc(@"vl", @"f1", zero);
+            EXPECT("prebuild: ordinary and near-zero entries get a base", 1, d != nil);
+            EXPECT("prebuild: selects the requested depth entry", 1, [((MTL4LibraryFunctionDescriptor *)d.vertexFunctionDescriptor).name isEqual:zero ? @"main0_z" : @"main0"]);
+            EXPECT("prebuild: the layer-free base actually compiles", 1, d && arch_capture(d, NULL, 0, NULL) != nil);
+        }
         EXPECT("prebuild: a library whose main0 writes the layer gets none", 0, pre_desc(@"vw", @"f1", 0) != nil);
     }
     EXPECT("batched archive: full coverage stamp preserved", 1, [[NSString stringWithContentsOfFile:[batched stringByAppendingPathComponent:@"prebuilt.tsv"] encoding:NSUTF8StringEncoding error:nil]

@@ -112,6 +112,8 @@ From an empty save: at about 45 s `A` (title), `A` (New Game), then the movie. F
 
 ## Found on this game
 
+- [Archive retry and backoff coverage](../../../docs/reference/rendering.md#a-run-that-ends-in-its-prewarm-loses-what-it-compiled): synthetic scheduled callbacks and real archive writes check the persistence mechanism; no new gameplay performance measurement.
+
 - [Hard shutdown deadline and archive-budget parsing](../../../docs/reference/threads.md#a-graceful-exits-hard-deadline-waits-for-its-callback): synthetic follow-up to the archive-persistence review, not a reproduced game hang.
 
 - [The 60 Hz link at 40 fps in fullscreen on a ProMotion screen](../../../docs/reference/frame-rate.md#the-60-hz-link-at-40-fps-in-fullscreen-on-a-promotion-screen): 40 fps in fullscreen on an M5 Pro MacBook Pro with the GPU at 10 ms of the 16.7, every present one 120 Hz refresh late and every other display-link tick skipped; the screen's fixed 60 Hz mode held 60.0 fps there and fullscreen now switches to it, with the 120 Hz link (59 fps) for screens with no such mode.
